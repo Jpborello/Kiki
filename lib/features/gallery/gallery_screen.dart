@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../core/models/project.dart';
 import '../../core/storage/project_repository.dart';
@@ -16,6 +16,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
   List<Project> _projects = [];
   bool _isLoading = true;
 
+  /// Miniaturas en vuelo/cargadas por id de proyecto, para no releerlas
+  /// en cada rebuild. Se vacía al recargar la lista (al volver del lienzo
+  /// la miniatura pudo haber cambiado).
+  final Map<String, Future<Uint8List?>> _thumbnails = {};
+
   @override
   void initState() {
     super.initState();
@@ -24,7 +29,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Future<void> _loadProjects() async {
     final list = await _repository.loadAllProjects();
+    if (!mounted) return;
     setState(() {
+      _thumbnails.clear();
       _projects = list;
       _isLoading = false;
     });
@@ -166,18 +173,29 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Widget _buildThumbnail(Project project) {
-    final thumbPath = project.thumbnailPath;
-    if (thumbPath == null) {
-      return const Center(
-        child: Icon(Icons.brush, size: 48, color: Color(0xFFFF69B4)),
-      );
-    }
-    return Image.file(
-      File(thumbPath),
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => const Center(
-        child: Icon(Icons.brush, size: 48, color: Color(0xFFFF69B4)),
-      ),
+    const placeholder = Center(
+      child: Icon(Icons.brush, size: 48, color: Color(0xFFFF69B4)),
+    );
+    if (project.thumbnailPath == null) return placeholder;
+
+    // Proyectos viejos guardaban acá una ruta absoluta; la miniatura
+    // siempre se llama igual, así que se busca por nombre fijo.
+    final thumbFuture = _thumbnails.putIfAbsent(
+      project.id,
+      () => _repository.readFile(project.id, ProjectRepository.thumbnailFileName),
+    );
+    return FutureBuilder<Uint8List?>(
+      future: thumbFuture,
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (bytes == null) return placeholder;
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => placeholder,
+        );
+      },
     );
   }
 }

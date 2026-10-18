@@ -1,36 +1,28 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 import '../models/project.dart';
+import 'blob_store.dart';
 
 class ProjectRepository {
-  Future<Directory> get _projectsDirectory async {
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(path.join(docs.path, 'projects'));
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return dir;
-  }
+  ProjectRepository({BlobStore? store}) : _store = store ?? BlobStore.instance;
+
+  final BlobStore _store;
+
+  static const String manifestFileName = 'manifest.json';
+  static const String thumbnailFileName = 'thumb.png';
 
   Future<List<Project>> loadAllProjects() async {
-    final rootDir = await _projectsDirectory;
-    final entities = await rootDir.list().toList();
+    final ids = await _store.listProjectIds();
     final List<Project> projects = [];
 
-    for (final entity in entities) {
-      if (entity is Directory) {
-        final manifestFile = File(path.join(entity.path, 'manifest.json'));
-        if (await manifestFile.exists()) {
-          try {
-            final content = await manifestFile.readAsString();
-            final json = jsonDecode(content) as Map<String, dynamic>;
-            projects.add(Project.fromJson(json));
-          } catch (e) {
-            // Error leyendo manifesto individual
-          }
-        }
+    for (final id in ids) {
+      final bytes = await _store.read(id, manifestFileName);
+      if (bytes == null) continue;
+      try {
+        final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        projects.add(Project.fromJson(json));
+      } catch (e) {
+        debugPrint('Manifest ilegible en el proyecto $id: $e');
       }
     }
 
@@ -39,26 +31,17 @@ class ProjectRepository {
   }
 
   Future<void> saveProject(Project project) async {
-    final rootDir = await _projectsDirectory;
-    final projDir = Directory(path.join(rootDir.path, project.id));
-    if (!await projDir.exists()) {
-      await projDir.create(recursive: true);
-    }
-
-    final manifestFile = File(path.join(projDir.path, 'manifest.json'));
-    await manifestFile.writeAsString(jsonEncode(project.toJson()));
+    final bytes = utf8.encode(jsonEncode(project.toJson()));
+    await _store.write(project.id, manifestFileName, bytes);
   }
 
-  Future<void> deleteProject(String id) async {
-    final rootDir = await _projectsDirectory;
-    final projDir = Directory(path.join(rootDir.path, id));
-    if (await projDir.exists()) {
-      await projDir.delete(recursive: true);
-    }
-  }
+  Future<void> deleteProject(String id) => _store.deleteProject(id);
 
-  Future<String> getProjectDirPath(String id) async {
-    final rootDir = await _projectsDirectory;
-    return path.join(rootDir.path, id);
-  }
+  /// Lee un archivo del proyecto (PNG de capa, miniatura, calco).
+  /// Devuelve `null` si no existe.
+  Future<Uint8List?> readFile(String projectId, String name) =>
+      _store.read(projectId, name);
+
+  Future<void> writeFile(String projectId, String name, Uint8List bytes) =>
+      _store.write(projectId, name, bytes);
 }

@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/models/museum_frame.dart';
+import '../../core/platform/image_export.dart';
 import '../../core/models/project.dart';
 import '../../core/models/symmetry.dart';
 import 'brushes/brush_library.dart';
@@ -168,6 +167,14 @@ class _CanvasScreenState extends State<CanvasScreen>
   bool _isStylus(PointerDeviceKind kind) =>
       kind == PointerDeviceKind.stylus || kind == PointerDeviceKind.invertedStylus;
 
+  /// Lápiz o mouse: punteros "precisos" que dibujan siempre y nunca
+  /// disparan el pan/zoom de dos dedos. El mouse importa en la versión
+  /// web cuando se usa desde una compu.
+  bool _isPrecisePointer(PointerDownEvent event) =>
+      _isStylus(event.kind) ||
+      (event.kind == PointerDeviceKind.mouse &&
+          event.buttons == kPrimaryMouseButton);
+
   List<Offset> get _touchPositions => _pointers.values
       .where((p) => p.kind == PointerDeviceKind.touch)
       .map((p) => p.position)
@@ -198,7 +205,7 @@ class _CanvasScreenState extends State<CanvasScreen>
   void _onPointerDown(PointerDownEvent event) {
     _pointers[event.pointer] = _ActivePointer(event.localPosition, event.kind);
 
-    if (_isStylus(event.kind)) {
+    if (_isPrecisePointer(event)) {
       if (_drawingPointerId == null) {
         _startDraw(event.pointer, event.localPosition, event);
       }
@@ -311,14 +318,14 @@ class _CanvasScreenState extends State<CanvasScreen>
       flattened.dispose();
       if (byteData != null) {
         final bytes = byteData.buffer.asUint8List();
-        await Gal.putImageBytes(
+        await exportPngImage(
           bytes,
-          name: 'kikidraw_${DateTime.now().millisecondsSinceEpoch}.png',
+          'kikidraw_${DateTime.now().millisecondsSinceEpoch}.png',
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('🎉 ✨ ¡Obra de arte guardada en la galería con éxito! 👑🎨'),
+              content: Text(exportSuccessMessage),
               backgroundColor: Color(0xFFFF69B4),
               duration: Duration(seconds: 3),
             ),
@@ -338,7 +345,7 @@ class _CanvasScreenState extends State<CanvasScreen>
     try {
       final picked = await _picker.pickImage(source: source);
       if (picked != null) {
-        await _controller.setTracingImageFromFile(File(picked.path));
+        await _controller.setTracingImageFromBytes(await picked.readAsBytes());
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

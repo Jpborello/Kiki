@@ -1,12 +1,15 @@
 {
-    "name": "kikidraw",
-    "short_name": "kikidraw",
+    "id": "kikidraw",
+    "name": "KikiDraw",
+    "short_name": "KikiDraw",
     "start_url": ".",
+    "scope": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#1E1E2C",
+    "theme_color": "#2A2A3D",
+    "description": "Dibujá, pintá y coloreá con pinceles mágicos.",
+    "lang": "es",
+    "categories": ["kids", "entertainment", "graphics"],
     "prefer_related_applications": false,
     "icons": [
         {

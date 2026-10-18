@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import '../../../core/models/layer.dart';
 import '../../../core/models/project.dart';
@@ -179,11 +178,8 @@ class CanvasController extends StateNotifier<CanvasState> {
   ) async {
     if (imagePath == null) return null;
     try {
-      final repo = ProjectRepository();
-      final dirPath = await repo.getProjectDirPath(projectId);
-      final file = File(path.join(dirPath, imagePath));
-      if (!await file.exists()) return null;
-      final bytes = await file.readAsBytes();
+      final bytes = await ProjectRepository().readFile(projectId, imagePath);
+      if (bytes == null) return null;
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       return frame.image;
@@ -276,21 +272,14 @@ class CanvasController extends StateNotifier<CanvasState> {
     );
   }
 
-  Future<void> setTracingImageFromFile(File imageFile) async {
+  Future<void> setTracingImageFromBytes(Uint8List bytes) async {
     try {
-      final bytes = await imageFile.readAsBytes();
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       final image = frame.image;
 
-      final dirPath = await _repository.getProjectDirPath(state.project.id);
-      final dir = Directory(dirPath);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      final tracingFileName = 'tracing_ref.png';
-      final targetFile = File(path.join(dirPath, tracingFileName));
-      await targetFile.writeAsBytes(bytes);
+      const tracingFileName = 'tracing_ref.png';
+      await _repository.writeFile(state.project.id, tracingFileName, bytes);
 
       state.project.tracingImagePath = tracingFileName;
       state.project.tracingVisible = true;
@@ -372,12 +361,6 @@ class CanvasController extends StateNotifier<CanvasState> {
       final project = state.project;
       project.updatedAt = DateTime.now();
 
-      final dirPath = await _repository.getProjectDirPath(project.id);
-      final dir = Directory(dirPath);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-
       for (final layer in project.layers) {
         final runtime = state.layerRuntimes[layer.id];
         if (runtime == null) continue;
@@ -386,8 +369,11 @@ class CanvasController extends StateNotifier<CanvasState> {
         if (byteData == null) continue;
         final fileName = 'layer_${layer.id}.png';
         layer.imagePath = fileName;
-        final file = File(path.join(dirPath, fileName));
-        await file.writeAsBytes(byteData.buffer.asUint8List());
+        await _repository.writeFile(
+          project.id,
+          fileName,
+          byteData.buffer.asUint8List(),
+        );
       }
 
       final flattened = await LayerCompositor.flattenLayers(
@@ -398,9 +384,12 @@ class CanvasController extends StateNotifier<CanvasState> {
       final thumbBytes = await flattened.toByteData(format: ui.ImageByteFormat.png);
       flattened.dispose();
       if (thumbBytes != null) {
-        final thumbFile = File(path.join(dirPath, 'thumb.png'));
-        await thumbFile.writeAsBytes(thumbBytes.buffer.asUint8List());
-        project.thumbnailPath = thumbFile.path;
+        await _repository.writeFile(
+          project.id,
+          ProjectRepository.thumbnailFileName,
+          thumbBytes.buffer.asUint8List(),
+        );
+        project.thumbnailPath = ProjectRepository.thumbnailFileName;
       }
 
       await _repository.saveProject(project);
