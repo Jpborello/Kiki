@@ -4,8 +4,8 @@
     {
       "name": "kikidraw-web",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["tool/serve_web.mjs", "8080"],
-      "port": 8080
+      "runtimeArgs": ["tool/serve_web.mjs", "8081"],
+      "port": 8081
     }
   ]
 }
