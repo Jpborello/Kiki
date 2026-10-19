@@ -3,6 +3,8 @@ enum BrushType {
   stamp,
   shader,
   eraser,
+  /// Balde de pintura: no hace trazos, rellena la zona tocada.
+  fill,
 }
 
 class Brush {

@@ -2,6 +2,13 @@ import '../../../core/models/brush.dart';
 export '../../../core/models/brush.dart';
 
 class BrushLibrary {
+  static final Brush bucket = Brush(
+    id: 'bucket',
+    name: 'Balde 🪣',
+    type: BrushType.fill,
+    isPressureSensitive: false,
+  );
+
   static final Brush pencil = Brush(
     id: 'pencil',
     name: 'Lápiz',
@@ -105,6 +112,7 @@ class BrushLibrary {
   );
 
   static List<Brush> get defaultBrushes => [
+        bucket,
         pencil,
         marker,
         watercolor,

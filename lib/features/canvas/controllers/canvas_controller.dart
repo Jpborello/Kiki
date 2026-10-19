@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -8,6 +9,7 @@ import '../../../core/models/layer.dart';
 import '../../../core/models/project.dart';
 import '../../../core/models/stroke.dart';
 import '../../../core/storage/project_repository.dart';
+import '../../coloring_book/flood_fill.dart';
 import '../brushes/brush_library.dart';
 import '../engine/history.dart';
 import '../engine/layer_compositor.dart';
@@ -15,25 +17,26 @@ import '../engine/layer_runtime.dart';
 
 import '../../../core/models/symmetry.dart';
 
-/// Comando de "agregar un trazo a una capa". Es liviano: no guarda
-/// imágenes, solo la referencia a la capa y los datos del trazo. La
-/// imagen resultante la calcula el propio [LayerRuntime].
-class AddStrokeCommand extends Command {
-  AddStrokeCommand({
+/// Comando de "agregar un trazo o un relleno a una capa". Es liviano: no
+/// guarda una imagen del lienzo entero, solo la referencia a la capa y el
+/// edit (los datos del trazo, o el parche chico del relleno). La imagen
+/// resultante la calcula el propio [LayerRuntime].
+class AddEditCommand extends Command {
+  AddEditCommand({
     required this.layerRuntime,
-    required this.pendingStroke,
+    required this.edit,
     required this.canvasSize,
   });
 
   final LayerRuntime layerRuntime;
-  final PendingStroke pendingStroke;
+  final LayerEdit edit;
   final Size canvasSize;
 
   @override
-  Future<void> execute() => layerRuntime.addStroke(pendingStroke, canvasSize);
+  Future<void> execute() => layerRuntime.addEdit(edit, canvasSize);
 
   @override
-  Future<void> undo() => layerRuntime.removeLastStroke(canvasSize);
+  Future<void> undo() => layerRuntime.removeLastEdit(canvasSize);
 
   @override
   Future<void> commitPermanently() =>
@@ -121,23 +124,30 @@ class CanvasController extends StateNotifier<CanvasState> {
 
   CanvasState get currentState => state;
 
+  /// [lineArt] (solo para proyectos nuevos): dibujo para colorear del
+  /// tamaño del lienzo. Va en una capa bloqueada arriba de todo, así se
+  /// pinta por debajo sin borrar las líneas.
   static Future<CanvasController> create(
     Project? existingProject, {
     Size? initialCanvasSize,
+    ui.Image? lineArt,
   }) async {
     final Size canvasSize = existingProject?.canvasSize ??
         initialCanvasSize ??
         const Size(2048, 2048);
 
+    final linesLayerId = const Uuid().v4();
     final project = existingProject ??
         Project(
           id: const Uuid().v4(),
-          name: 'Mi Obra Mágica',
+          name: lineArt != null ? 'Mi Dibujo para Colorear' : 'Mi Obra Mágica',
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
           canvasSize: canvasSize,
           layers: [
             Layer(id: const Uuid().v4(), name: 'Capa 1', order: 0),
+            if (lineArt != null)
+              Layer(id: linesLayerId, name: 'Líneas', order: 1, locked: true),
           ],
         );
 
@@ -146,10 +156,19 @@ class CanvasController extends StateNotifier<CanvasState> {
       ui.Image? loaded;
       if (existingProject != null) {
         loaded = await _loadLayerImage(project.id, layer.imagePath);
+      } else if (layer.id == linesLayerId) {
+        loaded = lineArt;
       }
       final baseImage = loaded ?? await LayerCompositor.createBlankImage(canvasSize);
       runtimes[layer.id] = LayerRuntime(layerId: layer.id, checkpointImage: baseImage);
     }
+
+    // Nunca se dibuja sobre una capa bloqueada (las líneas para colorear).
+    final drawableLayer = project.layers.firstWhere(
+      (l) => !l.locked,
+      orElse: () => project.layers.first,
+    );
+    final isColoringBook = project.layers.any((l) => l.locked);
 
     ui.Image? loadedTracing;
     if (project.tracingImagePath != null) {
@@ -158,9 +177,10 @@ class CanvasController extends StateNotifier<CanvasState> {
 
     final initialState = CanvasState(
       project: project,
-      activeLayerId: project.layers.first.id,
+      activeLayerId: drawableLayer.id,
       layerRuntimes: runtimes,
-      activeBrush: BrushLibrary.pencil,
+      // En un dibujo para colorear lo primero que se quiere es el balde.
+      activeBrush: isColoringBook ? BrushLibrary.bucket : BrushLibrary.pencil,
       activeColor: const Color(0xFFFF69B4),
       tracingImage: loadedTracing,
       isTracingMode: loadedTracing != null,
@@ -313,9 +333,9 @@ class CanvasController extends StateNotifier<CanvasState> {
       symmetryMode: state.symmetryMode,
     );
 
-    final cmd = AddStrokeCommand(
+    final cmd = AddEditCommand(
       layerRuntime: runtime,
-      pendingStroke: pendingStroke,
+      edit: pendingStroke,
       canvasSize: state.project.canvasSize,
     );
 
@@ -327,11 +347,121 @@ class CanvasController extends StateNotifier<CanvasState> {
       canRedo: historyManager.canRedo,
     );
 
+    _countEditForAutosave();
+  }
+
+  void _countEditForAutosave() {
     _strokesSinceAutosave++;
     if (_strokesSinceAutosave >= _autosaveEveryNStrokes) {
       _strokesSinceAutosave = 0;
       unawaited(saveProject());
     }
+  }
+
+  bool _isFilling = false;
+
+  /// Balde de pintura: rellena con el color activo la zona que se ve en
+  /// [canvasPos] (todas las capas compuestas, sin la foto de calco) y lo
+  /// pinta en la capa activa. Con la capa de líneas arriba, el relleno
+  /// queda debajo de las líneas y no las tapa.
+  Future<void> fillAt(Offset canvasPos) async {
+    if (_isFilling) return;
+    final runtime = state.layerRuntimes[state.activeLayerId];
+    if (runtime == null) return;
+    _isFilling = true;
+    try {
+      final canvasSize = state.project.canvasSize;
+      final flattened = await LayerCompositor.flattenLayers(
+        layers: state.project.layers,
+        layerImages: state.layerImages,
+        canvasSize: canvasSize,
+        includeSignature: false,
+      );
+      final byteData = await flattened.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final width = flattened.width;
+      final height = flattened.height;
+      flattened.dispose();
+      if (byteData == null) return;
+      final barrier = await _lineBarrier();
+
+      final result = await compute(
+        floodFill,
+        FloodFillRequest(
+          rgba: byteData.buffer.asUint8List(),
+          width: width,
+          height: height,
+          x: canvasPos.dx.floor(),
+          y: canvasPos.dy.floor(),
+          color: state.activeColor.toARGB32(),
+          // Las líneas engrosadas tapan 2 px de desborde sin problema.
+          grow: 2,
+          barrier: barrier,
+          // Las líneas sacadas de una foto suelen tener cortes chicos.
+          gapClose: math.max(2, (math.min(width, height) / 300).round()),
+        ),
+      );
+      if (result == null || !mounted) return;
+
+      final patch = await _imageFromRgba(result.rgba, result.width, result.height);
+      final cmd = AddEditCommand(
+        layerRuntime: runtime,
+        edit: FillEdit(
+          patch: patch,
+          offset: Offset(result.left.toDouble(), result.top.toDouble()),
+        ),
+        canvasSize: canvasSize,
+      );
+      await historyManager.pushAndExecute(cmd);
+      if (!mounted) return;
+      state = state.copyWith(
+        canUndo: historyManager.canUndo,
+        canRedo: historyManager.canRedo,
+      );
+      _countEditForAutosave();
+    } catch (e) {
+      debugPrint('Error rellenando con el balde: $e');
+    } finally {
+      _isFilling = false;
+    }
+  }
+
+  Uint8List? _lineBarrierCache;
+
+  /// Alfa (un byte por píxel) de las capas bloqueadas, o sea las líneas
+  /// del dibujo para colorear; `null` si no hay. Esas capas nunca se
+  /// editan, así que se calcula una sola vez.
+  Future<Uint8List?> _lineBarrier() async {
+    if (_lineBarrierCache != null) return _lineBarrierCache;
+    final locked = state.project.layers.where((l) => l.locked && l.visible).toList();
+    if (locked.isEmpty) return null;
+
+    final size = state.project.canvasSize;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Offset.zero & size);
+    for (final layer in locked) {
+      final image = state.layerImages[layer.id];
+      if (image != null) canvas.drawImage(image, Offset.zero, Paint());
+    }
+    final composed = await recorder.endRecording().toImage(
+      size.width.toInt(),
+      size.height.toInt(),
+    );
+    final data = await composed.toByteData(format: ui.ImageByteFormat.rawRgba);
+    composed.dispose();
+    if (data == null) return null;
+
+    final rgba = data.buffer.asUint8List();
+    final alpha = Uint8List(rgba.length ~/ 4);
+    for (var i = 0; i < alpha.length; i++) {
+      alpha[i] = rgba[i * 4 + 3];
+    }
+    return _lineBarrierCache = alpha;
+  }
+
+  static Future<ui.Image> _imageFromRgba(Uint8List rgba, int width, int height) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(rgba, width, height, ui.PixelFormat.rgba8888, completer.complete);
+    return completer.future;
   }
 
   Future<void> undo() async {

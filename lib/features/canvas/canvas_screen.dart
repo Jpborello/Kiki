@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -19,7 +20,27 @@ class CanvasScreen extends StatefulWidget {
   final Project? project;
   final Size? initialCanvasSize;
 
-  const CanvasScreen({super.key, this.project, this.initialCanvasSize});
+  /// Dibujo para colorear (del tamaño de [initialCanvasSize]) para un
+  /// proyecto nuevo. La pantalla se queda con la imagen.
+  final ui.Image? initialLineArt;
+
+  /// Foto para calcar en un proyecto nuevo.
+  final Uint8List? initialTracingBytes;
+
+  const CanvasScreen({
+    super.key,
+    this.project,
+    this.initialCanvasSize,
+    this.initialLineArt,
+    this.initialTracingBytes,
+  });
+
+  /// Tamaño para un lienzo nuevo: 1440 px de ancho con la proporción de
+  /// la pantalla, así llena la vista sin bordes.
+  static Size defaultCanvasSize(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Size(1440, (1440 * (size.height / size.width)).roundToDouble());
+  }
 
   @override
   State<CanvasScreen> createState() => _CanvasScreenState();
@@ -50,6 +71,7 @@ class _CanvasScreenState extends State<CanvasScreen>
 
   final Map<int, _ActivePointer> _pointers = {};
   int? _drawingPointerId;
+  Offset? _bucketTapCanvasPos;
   bool _isTransformGesture = false;
   Offset? _lastFocal;
   double? _lastSpan;
@@ -89,7 +111,12 @@ class _CanvasScreenState extends State<CanvasScreen>
     final controller = await CanvasController.create(
       widget.project,
       initialCanvasSize: widget.initialCanvasSize,
+      lineArt: widget.initialLineArt,
     );
+    final tracingBytes = widget.initialTracingBytes;
+    if (tracingBytes != null && mounted) {
+      await controller.setTracingImageFromBytes(tracingBytes);
+    }
     if (!mounted) {
       controller.dispose();
       return;
@@ -195,9 +222,18 @@ class _CanvasScreenState extends State<CanvasScreen>
     return normalized.clamp(0.0, 1.0).toDouble();
   }
 
+  bool get _isBucketActive =>
+      _controller.currentState.activeBrush.type == BrushType.fill;
+
   void _startDraw(int pointerId, Offset localPosition, PointerEvent event) {
     _drawingPointerId = pointerId;
     final canvasPos = _viewportToCanvas(localPosition);
+    if (_isBucketActive) {
+      // El balde rellena al levantar el dedo: si en el medio aparece un
+      // segundo dedo (pan/zoom), el toque se cancela y no rellena nada.
+      _bucketTapCanvasPos = canvasPos;
+      return;
+    }
     final pressure = _normalizedPressure(event);
     _controller.startStroke(canvasPos, pressure, event.tilt);
   }
@@ -222,6 +258,7 @@ class _CanvasScreenState extends State<CanvasScreen>
     if (_drawingPointerId != null && touches.length >= 2) {
       _controller.cancelStroke();
       _drawingPointerId = null;
+      _bucketTapCanvasPos = null;
       _beginTransformGesture();
     } else if (_drawingPointerId == null && touches.length == 1) {
       _startDraw(event.pointer, event.localPosition, event);
@@ -245,7 +282,12 @@ class _CanvasScreenState extends State<CanvasScreen>
   void _onPointerEnd(PointerEvent event) {
     _pointers.remove(event.pointer);
 
-    if (_drawingPointerId == event.pointer) {
+    final bucketTap = _bucketTapCanvasPos;
+    if (_drawingPointerId == event.pointer && bucketTap != null) {
+      _drawingPointerId = null;
+      _bucketTapCanvasPos = null;
+      if (event is PointerUpEvent) _controller.fillAt(bucketTap);
+    } else if (_drawingPointerId == event.pointer) {
       _drawingPointerId = null;
       _controller.endStroke(
         shader: _getShaderForBrush(_controller.currentState.activeBrush),

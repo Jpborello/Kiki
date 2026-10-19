@@ -1,9 +1,38 @@
 import 'package:flutter/material.dart';
 import '../canvas/canvas_screen.dart';
+import '../coloring_book/coloring_setup_screen.dart';
 import '../gallery/gallery_screen.dart';
+import '../photo/pick_photo.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
+
+  Future<void> _colorPhoto(BuildContext context) async {
+    final canvasSize = CanvasScreen.defaultCanvasSize(context);
+    final bytes = await pickPhotoBytes(context, title: '¿Qué foto querés colorear? 🖍️');
+    if (bytes == null || !context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ColoringSetupScreen(photoBytes: bytes, canvasSize: canvasSize),
+      ),
+    );
+  }
+
+  Future<void> _tracePhoto(BuildContext context) async {
+    final canvasSize = CanvasScreen.defaultCanvasSize(context);
+    final bytes = await pickPhotoBytes(context, title: '¿Qué foto querés calcar? ✏️');
+    if (bytes == null || !context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanvasScreen(
+          initialCanvasSize: canvasSize,
+          initialTracingBytes: bytes,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,103 +50,177 @@ class WelcomeScreen extends StatelessWidget {
         ),
         child: SafeArea(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 110,
-                    height: 110,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.15),
-                      border: Border.all(color: const Color(0xFFFF69B4), width: 3),
-                    ),
-                    child: const Icon(
-                      Icons.palette_rounded,
-                      size: 64,
-                      color: Color(0xFFFF69B4),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    '¡Hola, Kiara Zoe! 👑🎨',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Bienvenida a tu estudio de arte personal',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF69B4),
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 56),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.15),
+                        border: Border.all(color: const Color(0xFFFF69B4), width: 3),
                       ),
-                      elevation: 8,
+                      child: const Icon(
+                        Icons.palette_rounded,
+                        size: 64,
+                        color: Color(0xFFFF69B4),
+                      ),
                     ),
-                    onPressed: () {
-                      final media = MediaQuery.of(context);
-                      final width = media.size.width;
-                      final height = media.size.height;
-                      final double targetWidth = 1440;
-                      final double targetHeight = (1440 * (height / width)).roundToDouble();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CanvasScreen(
-                            initialCanvasSize: Size(targetWidth, targetHeight),
+                    const SizedBox(height: 24),
+                    const Text(
+                      '¡Hola, Kiara Zoe! 👑🎨',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Bienvenida a tu estudio de arte personal',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF69B4),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        elevation: 8,
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CanvasScreen(
+                              initialCanvasSize: CanvasScreen.defaultCanvasSize(context),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.brush_rounded, size: 28),
+                      label: const Text(
+                        'Crear Nueva Obra Mágica',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _BigPhotoButton(
+                            emoji: '🖍️',
+                            label: 'Colorear\nuna foto',
+                            color: const Color(0xFFFFD700),
+                            onTap: () => _colorPhoto(context),
                           ),
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.add_a_photo_outlined, size: 28),
-                    label: const Text(
-                      'Crear Nueva Obra Mágica',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _BigPhotoButton(
+                            emoji: '✏️',
+                            label: 'Calcar\nuna foto',
+                            color: const Color(0xFF2ECC71),
+                            onTap: () => _tracePhoto(context),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 56),
-                      side: const BorderSide(color: Color(0xFF00E5FF), width: 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 56),
+                        side: const BorderSide(color: Color(0xFF00E5FF), width: 2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const GalleryScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.collections_outlined, size: 28, color: Color(0xFF00E5FF)),
+                      label: const Text(
+                        'Mi Galería de Arte',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const GalleryScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.collections_outlined, size: 28, color: Color(0xFF00E5FF)),
-                    label: const Text(
-                      'Mi Galería de Arte',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón grande y cuadrado, fácil de tocar para una nena: emoji enorme
+/// y texto corto.
+class _BigPhotoButton extends StatelessWidget {
+  const _BigPhotoButton({
+    required this.emoji,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String emoji;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: color, width: 2.5),
+          ),
+          child: Column(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 48)),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  height: 1.2,
+                ),
+              ),
+            ],
           ),
         ),
       ),
