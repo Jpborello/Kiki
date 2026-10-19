@@ -7,6 +7,7 @@ class BrushLibrary {
     name: 'Balde 🪣',
     type: BrushType.fill,
     isPressureSensitive: false,
+    soundAssetPath: 'sounds/bloop.wav',
   );
 
   static final Brush pencil = Brush(
@@ -34,6 +35,7 @@ class BrushLibrary {
     size: 24.0,
     opacity: 0.5,
     isPressureSensitive: true,
+    soundAssetPath: 'sounds/drip.wav',
   );
 
   static final Brush airbrush = Brush(
@@ -52,6 +54,7 @@ class BrushLibrary {
     size: 28.0,
     opacity: 1.0,
     isPressureSensitive: false,
+    soundAssetPath: 'sounds/swish.wav',
   );
 
   static final Brush neon = Brush(
@@ -61,6 +64,7 @@ class BrushLibrary {
     size: 16.0,
     opacity: 1.0,
     isPressureSensitive: true,
+    soundAssetPath: 'sounds/zap.wav',
   );
 
   static final Brush stars = Brush(
@@ -71,6 +75,7 @@ class BrushLibrary {
     opacity: 1.0,
     spacing: 28.0,
     isPressureSensitive: true,
+    soundAssetPath: 'sounds/pop.wav',
   );
 
   static final Brush hearts = Brush(
@@ -81,6 +86,7 @@ class BrushLibrary {
     opacity: 1.0,
     spacing: 28.0,
     isPressureSensitive: true,
+    soundAssetPath: 'sounds/pop.wav',
   );
 
   static final Brush flowers = Brush(
@@ -91,6 +97,7 @@ class BrushLibrary {
     opacity: 1.0,
     spacing: 30.0,
     isPressureSensitive: true,
+    soundAssetPath: 'sounds/pop.wav',
   );
 
   static final Brush glitterShader = Brush(
@@ -100,6 +107,7 @@ class BrushLibrary {
     size: 20.0,
     opacity: 1.0,
     shaderAssetPath: 'shaders/glitter.frag',
+    soundAssetPath: 'sounds/sparkle.wav',
   );
 
   static final Brush rainbowShader = Brush(
@@ -109,6 +117,7 @@ class BrushLibrary {
     size: 18.0,
     opacity: 1.0,
     shaderAssetPath: 'shaders/rainbow.frag',
+    soundAssetPath: 'sounds/harp.wav',
   );
 
   static List<Brush> get defaultBrushes => [

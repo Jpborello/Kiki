@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/audio/sound_service.dart';
 import '../../core/models/museum_frame.dart';
 import '../../core/platform/image_export.dart';
 import '../../core/models/project.dart';
@@ -98,6 +99,10 @@ class _CanvasScreenState extends State<CanvasScreen>
   void initState() {
     super.initState();
     _loadShaders();
+    SoundService.instance.preload([
+      for (final brush in BrushLibrary.defaultBrushes)
+        if (brush.soundAssetPath != null) brush.soundAssetPath!,
+    ]);
     _ticker = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),
@@ -239,6 +244,13 @@ class _CanvasScreenState extends State<CanvasScreen>
     }
     final pressure = _normalizedPressure(event);
     _controller.startStroke(canvasPos, pressure, event.tilt);
+    // Suena al empezar el trazo (no todo el tiempo), para que no canse.
+    _playBrushSound();
+  }
+
+  void _playBrushSound() {
+    final sound = _controller.currentState.activeBrush.soundAssetPath;
+    if (sound != null) SoundService.instance.playAsset(sound);
   }
 
   void _onPointerDown(PointerDownEvent event) {
@@ -289,7 +301,10 @@ class _CanvasScreenState extends State<CanvasScreen>
     if (_drawingPointerId == event.pointer && bucketTap != null) {
       _drawingPointerId = null;
       _bucketTapCanvasPos = null;
-      if (event is PointerUpEvent) _controller.fillAt(bucketTap);
+      if (event is PointerUpEvent) {
+        _playBrushSound();
+        _controller.fillAt(bucketTap);
+      }
     } else if (_drawingPointerId == event.pointer) {
       _drawingPointerId = null;
       _controller.endStroke(
@@ -367,6 +382,7 @@ class _CanvasScreenState extends State<CanvasScreen>
           bytes,
           'kikidraw_${DateTime.now().millisecondsSinceEpoch}.png',
         );
+        SoundService.instance.play(MagicSound.tada);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -661,6 +677,7 @@ class _CanvasScreenState extends State<CanvasScreen>
 
   Future<void> _saveProject() async {
     await _controller.saveProject();
+    SoundService.instance.play(MagicSound.chime);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -758,14 +775,39 @@ class _CanvasScreenState extends State<CanvasScreen>
             },
             tooltip: _fillScreenMode ? 'Llenar Pantalla Completa' : 'Ajustar Contenido',
           ),
+          ValueListenableBuilder<bool>(
+            valueListenable: SoundService.instance.muted,
+            builder: (context, muted, _) => IconButton(
+              icon: Icon(
+                muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: muted ? Colors.white38 : const Color(0xFFFFD700),
+              ),
+              onPressed: () async {
+                await SoundService.instance.toggleMuted();
+                // Al activarlos, una campanita confirma que se oyen.
+                SoundService.instance.play(MagicSound.chime);
+              },
+              tooltip: muted ? 'Activar sonidos' : 'Silenciar sonidos',
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.undo),
-            onPressed: state.canUndo ? () => _controller.undo() : null,
+            onPressed: state.canUndo
+                ? () {
+                    SoundService.instance.play(MagicSound.whoosh);
+                    _controller.undo();
+                  }
+                : null,
             tooltip: 'Deshacer',
           ),
           IconButton(
             icon: const Icon(Icons.redo),
-            onPressed: state.canRedo ? () => _controller.redo() : null,
+            onPressed: state.canRedo
+                ? () {
+                    SoundService.instance.play(MagicSound.whooshUp);
+                    _controller.redo();
+                  }
+                : null,
             tooltip: 'Rehacer',
           ),
           IconButton(
@@ -1025,10 +1067,15 @@ class _CanvasScreenState extends State<CanvasScreen>
                                   child: const Icon(Icons.colorize, size: 18, color: Colors.white),
                                 ),
                               ),
-                              ..._palette.map((color) {
+                              ..._palette.indexed.map((entry) {
+                                final (index, color) = entry;
                                 final isSelected = state.activeColor == color;
                                 return GestureDetector(
-                                  onTap: () => _controller.selectColor(color),
+                                  onTap: () {
+                                    // Cada color es una nota de la escala.
+                                    SoundService.instance.playNote(index);
+                                    _controller.selectColor(color);
+                                  },
                                   child: Container(
                                     width: 34,
                                     height: 34,

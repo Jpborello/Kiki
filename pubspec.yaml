@@ -80,6 +80,10 @@ flutter:
     - shaders/rainbow.frag
     - shaders/watercolor.frag
 
+  # Sonidos mágicos (generados con tool/generate_sounds.mjs).
+  assets:
+    - assets/sounds/
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:
