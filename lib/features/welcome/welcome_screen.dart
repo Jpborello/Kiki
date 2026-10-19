@@ -1,41 +1,49 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import '../../core/platform/image_drop.dart';
 import '../canvas/canvas_screen.dart';
-import '../coloring_book/coloring_setup_screen.dart';
 import '../gallery/gallery_screen.dart';
+import '../photo/photo_drop_target.dart';
+import '../photo/photo_flow.dart';
 import '../photo/pick_photo.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
   Future<void> _colorPhoto(BuildContext context) async {
-    final canvasSize = CanvasScreen.defaultCanvasSize(context);
     final bytes = await pickPhotoBytes(context, title: '¿Qué foto querés colorear? 🖍️');
     if (bytes == null || !context.mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ColoringSetupScreen(photoBytes: bytes, canvasSize: canvasSize),
-      ),
-    );
+    await colorPhoto(context, bytes);
   }
 
   Future<void> _tracePhoto(BuildContext context) async {
-    final canvasSize = CanvasScreen.defaultCanvasSize(context);
     final bytes = await pickPhotoBytes(context, title: '¿Qué foto querés calcar? ✏️');
     if (bytes == null || !context.mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CanvasScreen(
-          initialCanvasSize: canvasSize,
-          initialTracingBytes: bytes,
-        ),
-      ),
-    );
+    await tracePhoto(context, bytes);
+  }
+
+  /// Foto pegada o arrastrada (web): se pregunta qué hacer con ella.
+  Future<void> _onDroppedPhoto(BuildContext context, Uint8List bytes) async {
+    final use = await askPhotoUse(context, bytes);
+    if (use == null || !context.mounted) return;
+    switch (use) {
+      case PhotoUse.color:
+        await colorPhoto(context, bytes);
+      case PhotoUse.trace:
+        await tracePhoto(context, bytes);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    return PhotoDropTarget(
+      onImage: (bytes) => _onDroppedPhoto(context, bytes),
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -141,6 +149,17 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (supportsImageDrop) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'También podés pegar una captura (Ctrl+V) o arrastrar una foto acá 📥',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
 
                     OutlinedButton.icon(

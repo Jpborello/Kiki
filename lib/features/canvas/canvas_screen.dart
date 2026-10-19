@@ -9,6 +9,9 @@ import '../../core/models/museum_frame.dart';
 import '../../core/platform/image_export.dart';
 import '../../core/models/project.dart';
 import '../../core/models/symmetry.dart';
+import '../photo/crop_rotate_screen.dart';
+import '../photo/photo_drop_target.dart';
+import '../photo/photo_flow.dart';
 import 'brushes/brush_library.dart';
 import 'controllers/canvas_controller.dart';
 import 'engine/layer_compositor.dart';
@@ -386,19 +389,39 @@ class _CanvasScreenState extends State<CanvasScreen>
   Future<void> _pickTracingImage(ImageSource source) async {
     try {
       final picked = await _picker.pickImage(source: source);
-      if (picked != null) {
-        await _controller.setTracingImageFromBytes(await picked.readAsBytes());
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('📸 ¡Foto lista para calcar! Podés ajustar su transparencia'),
-              backgroundColor: Color(0xFF8E44AD),
-            ),
-          );
-        }
+      if (picked != null && mounted) {
+        await _cropAndSetTracingImage(await picked.readAsBytes());
       }
     } catch (e) {
       debugPrint('Error seleccionando imagen: $e');
+    }
+  }
+
+  /// Deja recortar y girar la foto y la pone de fondo para calcar.
+  Future<void> _cropAndSetTracingImage(Uint8List bytes) async {
+    final cropped = await cropAndRotatePhoto(context, bytes);
+    if (cropped == null || !mounted) return;
+    await _controller.setTracingImageFromBytes(cropped);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📸 ¡Foto lista para calcar! Podés ajustar su transparencia'),
+          backgroundColor: Color(0xFF8E44AD),
+        ),
+      );
+    }
+  }
+
+  /// Foto pegada o arrastrada (web). Calcar la pone de fondo en este
+  /// dibujo; colorear abre un dibujo nuevo encima, sin perder este.
+  Future<void> _onDroppedPhoto(Uint8List bytes) async {
+    final use = await askPhotoUse(context, bytes);
+    if (use == null || !mounted) return;
+    switch (use) {
+      case PhotoUse.color:
+        await colorPhoto(context, bytes);
+      case PhotoUse.trace:
+        await _cropAndSetTracingImage(bytes);
     }
   }
 
@@ -680,6 +703,13 @@ class _CanvasScreenState extends State<CanvasScreen>
       );
     }
 
+    return PhotoDropTarget(
+      onImage: _onDroppedPhoto,
+      child: _buildStudio(context),
+    );
+  }
+
+  Widget _buildStudio(BuildContext context) {
     final state = _controller.currentState;
     final activeBrush = state.activeBrush;
     final canvasSize = state.project.canvasSize;
